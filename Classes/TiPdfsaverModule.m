@@ -86,15 +86,24 @@
 
 #pragma Public APIs
 
--(void)saveThumbnail:(id)args{
+CGPDFDocumentRef _templateDocument;
+-(void)open:(id)args{
 	NSString *pdf = [args objectAtIndex:0];
-	NSString *jpeg = [args objectAtIndex:1];
 
 	CFURLRef url = CFURLCreateWithFileSystemPath (NULL, (CFStringRef)pdf, kCFURLPOSIXPathStyle, 0);
-	CGPDFDocumentRef templateDocument = CGPDFDocumentCreateWithURL(url);
+	_templateDocument = CGPDFDocumentCreateWithURL(url);
 	CFRelease(url);
+}
 
-	CGPDFPageRef templatePage = CGPDFDocumentGetPage(templateDocument, 1); // get the first page
+-(void)close{
+	CGPDFDocumentRelease(_templateDocument);
+}
+
+-(UIImageView*)getPage:(id)args
+{
+	NSNumber *pagenum = [args objectAtIndex:0];
+
+	CGPDFPageRef templatePage = CGPDFDocumentGetPage(_templateDocument, [pagenum integerValue]);
 	CGRect templatePageBounds = CGPDFPageGetBoxRect(templatePage, kCGPDFCropBox);
 	UIGraphicsBeginImageContext(templatePageBounds.size);
 
@@ -107,21 +116,41 @@
 
 	UIImage *imageToReturn = UIGraphicsGetImageFromCurrentImageContext();
 	UIGraphicsEndImageContext();
+
+	return [[[TiBlob alloc] initWithImage:imageToReturn] autorelease];;
+}
+
+-(void)saveThumbnail:(id)args{
+	NSString *pdf = [args objectAtIndex:0];
+	NSString *jpeg = [args objectAtIndex:1];
+
+	CFURLRef url = CFURLCreateWithFileSystemPath (NULL, (CFStringRef)pdf, kCFURLPOSIXPathStyle, 0);
+	CGPDFDocumentRef templateDocument = CGPDFDocumentCreateWithURL(url);
+	CFRelease(url);
+
+	CGPDFPageRef templatePage = CGPDFDocumentGetPage(templateDocument, 1);
+	CGRect templatePageBounds = CGPDFPageGetBoxRect(templatePage, kCGPDFCropBox);
+	UIGraphicsBeginImageContext(templatePageBounds.size);
+
+	CGContextRef context = UIGraphicsGetCurrentContext();
+
+	CGContextTranslateCTM(context, 0.0, templatePageBounds.size.height);
+	CGContextScaleCTM(context, 1.0, -1.0);
+
+	CGContextDrawPDFPage(context, templatePage);
+	UIImage *imageToReturn = UIGraphicsGetImageFromCurrentImageContext();
+	UIGraphicsEndImageContext();
 	CGPDFDocumentRelease(templateDocument);
 
 	[UIImageJPEGRepresentation(imageToReturn, 1.0) writeToFile:jpeg atomically:YES];
 }
 
 -(void)saveInExportFileWithDrawings:(id)args{
+	NSString *exportpath = [args objectAtIndex:0];
+	NSDictionary *drawings = [args objectAtIndex:1];
+	NSNumber *all = [args objectAtIndex:2];
 
-	NSString *fresh = [args objectAtIndex:0];
-	NSString *exportpath = [args objectAtIndex:1];
-	NSDictionary *drawings = [args objectAtIndex:2];
-	NSNumber *all = [args objectAtIndex:3];
-	CFURLRef url = CFURLCreateWithFileSystemPath (NULL, (CFStringRef)fresh, kCFURLPOSIXPathStyle, 0);
-	CGPDFDocumentRef templateDocument = CGPDFDocumentCreateWithURL(url);
-	CFRelease(url);
-	size_t count = CGPDFDocumentGetNumberOfPages(templateDocument);
+	size_t count = CGPDFDocumentGetNumberOfPages(_templateDocument);
 
 	UIGraphicsBeginPDFContextToFile(exportpath, CGRectMake(0, 0, 612, 792), nil);
 	for (int pageNumber = 1; pageNumber <= count; pageNumber++) {
@@ -130,7 +159,7 @@
 			continue;
 		}
 
-	    CGPDFPageRef templatePage = CGPDFDocumentGetPage(templateDocument, pageNumber);
+	    CGPDFPageRef templatePage = CGPDFDocumentGetPage(_templateDocument, pageNumber);
 	    CGRect templatePageBounds = CGPDFPageGetBoxRect(templatePage, kCGPDFCropBox);
 	    UIGraphicsBeginPDFPageWithInfo(templatePageBounds, nil);
 	    CGContextRef context = UIGraphicsGetCurrentContext();
@@ -138,7 +167,6 @@
 	    CGContextScaleCTM(context, 1.0, -1.0);
 
 	    CGContextDrawPDFPage(context, templatePage);
-
 	    CGContextTranslateCTM(context, 0.0, templatePageBounds.size.height);
 	    CGContextScaleCTM(context, 1.0, -1.0);
 
@@ -150,7 +178,6 @@
 	    	[ret drawInRect:CGRectMake(0, 0, templatePageBounds.size.width, templatePageBounds.size.height)];
 	    }
 	}
-	CGPDFDocumentRelease(templateDocument);
 	UIGraphicsEndPDFContext();
 }
 
